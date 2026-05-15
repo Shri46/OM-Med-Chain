@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { useContract } from '../../hooks/useContract'; // We'll need to add event querying to useContract or do it here with ethers directly
 import { useWallet } from '../../hooks/useWallet';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { formatAddress } from '../../utils/formatters';
-import { getUserName } from '../../utils/nameStorage';
 import { Spinner } from '../ui/Spinner';
 import { CONTRACT_ADDRESS } from '../../constants/contractAddress';
 import { CONTRACT_ABI } from '../../constants/contractABI';
 import { ethers } from 'ethers';
+import { useMedChainApi } from '../../hooks/useMedChainApi';
 
 export const AuthorizedDoctors = ({ refreshTrigger }) => {
     const { provider, account } = useWallet();
+    const medApi = useMedChainApi();
     const [doctors, setDoctors] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -49,7 +49,8 @@ export const AuthorizedDoctors = ({ refreshTrigger }) => {
                 });
 
                 const activeDoctors = Object.keys(statusMap).filter(addr => statusMap[addr]);
-                setDoctors(activeDoctors);
+                const profiles = await Promise.all(activeDoctors.map((wallet) => medApi.getDoctor(wallet).catch(() => ({ walletAddress: wallet }))));
+                setDoctors(profiles);
 
             } catch (error) {
                 console.error("Error fetching authorized doctors:", error);
@@ -74,11 +75,10 @@ export const AuthorizedDoctors = ({ refreshTrigger }) => {
                 ) : (
                     <ul className="divide-y divide-gray-200">
                         {doctors.map(doctor => {
-                            const name = getUserName(doctor);
                             return (
-                                <li key={doctor} className="py-2 flex justify-between items-center">
-                                    <span className={name ? "text-sm font-medium text-gray-900" : "font-mono text-sm text-gray-700"}>
-                                        {name ? `${name} (${formatAddress(doctor)})` : formatAddress(doctor)}
+                                <li key={doctor.walletAddress} className="py-2 flex justify-between items-center">
+                                    <span className="text-sm font-medium text-gray-900">
+                                        {doctor.name ? `${doctor.name} (${doctor.specialization || 'Doctor'})` : formatAddress(doctor.walletAddress)}
                                     </span>
                                     <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Active</span>
                                 </li>

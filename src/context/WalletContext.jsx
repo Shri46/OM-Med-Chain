@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { useToast } from './ToastContext';
+import { api } from '../services/api';
 
 const WalletContext = createContext();
 
@@ -12,9 +13,37 @@ export const WalletProvider = ({ children }) => {
     const [isInitializing, setIsInitializing] = useState(true);
     const { showToast } = useToast();
 
+    const persistLoginActivity = useCallback(async (walletAddress) => {
+        try {
+            const roleResponse = await api.get(`/patients/${walletAddress}`);
+            await api.post('/activity', {
+                walletAddress,
+                role: 'patient',
+                activityType: 'MetaMask login',
+                relatedName: roleResponse.data.name,
+            });
+        } catch {
+            try {
+                const roleResponse = await api.get(`/doctors/${walletAddress}`);
+                await api.post('/activity', {
+                    walletAddress,
+                    role: 'doctor',
+                    activityType: 'MetaMask login',
+                    relatedName: roleResponse.data.name,
+                });
+            } catch {
+                // New users do not have a Mongo profile yet.
+            }
+        }
+    }, []);
+
     useEffect(() => {
         const init = async () => {
-            if (window.ethereum) {
+            if (!window.ethereum) {
+                setIsInitializing(false);
+                return undefined;
+            }
+
                 try {
                     const browserProvider = new ethers.BrowserProvider(window.ethereum);
                     setProvider(browserProvider);
@@ -26,30 +55,18 @@ export const WalletProvider = ({ children }) => {
                         setAccount(address);
                         const net = await browserProvider.getNetwork();
                         setNetwork({ name: net.name, chainId: net.chainId });
+                        persistLoginActivity(address);
                     }
                 } catch (error) {
                     console.error("Wallet initialization error:", error);
                 } finally {
                     setIsInitializing(false);
                 }
-                // ... rest of the file
 
-                // Listen for account changes
-                window.ethereum.on('accountsChanged', (accounts) => {
-                    if (accounts.length > 0) {
-                        setAccount(accounts[0]);
-                        showToast('Account changed', 'info');
-                    } else {
-                        setAccount(null);
-                        showToast('Disconnected', 'info');
-                    }
-                });
-
-                // Listen for account changes
                 const handleAccountsChanged = async (accounts) => {
                     if (accounts.length > 0) {
-                        // accounts returned by event are strings
                         setAccount(accounts[0]);
+                        persistLoginActivity(accounts[0]);
                         showToast('Account changed', 'info');
                     } else {
                         setAccount(null);
@@ -74,10 +91,12 @@ export const WalletProvider = ({ children }) => {
                         window.ethereum.removeListener('chainChanged', handleChainChanged);
                     }
                 };
-            }
         };
-        init();
-    }, []); // Run once on mount
+        const cleanupPromise = init();
+        return () => {
+            cleanupPromise?.then?.((cleanup) => cleanup?.());
+        };
+    }, [persistLoginActivity, showToast]);
 
     const connectWallet = async () => {
         if (!window.ethereum) {
@@ -93,6 +112,7 @@ export const WalletProvider = ({ children }) => {
 
             const net = await browserProvider.getNetwork();
             setNetwork({ name: net.name, chainId: net.chainId });
+            persistLoginActivity(accounts[0]);
 
             showToast('Wallet connected successfully', 'success');
         } catch (error) {

@@ -3,11 +3,15 @@ import { useContract } from '../../hooks/useContract';
 import { RecordCard } from './RecordCard';
 import { Spinner } from '../ui/Spinner';
 import { FileText } from 'lucide-react';
+import { FileViewer } from '../doctor/FileViewer';
+import { useWallet } from '../../hooks/useWallet';
 
 export const RecordList = ({ refreshTrigger }) => {
     const { getRecords } = useContract();
+    const { account } = useWallet();
     const [records, setRecords] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [selectedRecord, setSelectedRecord] = useState(null);
 
     useEffect(() => {
         const fetchRecords = async () => {
@@ -39,10 +43,19 @@ export const RecordList = ({ refreshTrigger }) => {
     }
 
     return (
-        <div className="space-y-4">
-            {records.map((record, index) => (
-                <RecordCard key={`${record.cid}-${index}`} record={record} />
-            ))}
-        </div>
+        <>
+            <div className="space-y-4">
+                {records.map((record, index) => (
+                    <RecordCard key={`${record.cid}-${index}`} record={record} onView={setSelectedRecord} />
+                ))}
+            </div>
+            <FileViewer
+                record={selectedRecord}
+                isOpen={!!selectedRecord}
+                onClose={() => setSelectedRecord(null)}
+                viewerRole="patient"
+                patientWallet={account}
+            />
+        </>
     );
 };

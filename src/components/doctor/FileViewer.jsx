@@ -1,20 +1,23 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { X, Download, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { useIPFS } from '../../hooks/useIPFS';
-import { decryptFile, importKey } from '../../utils/encryption';
+import { decryptAESKeyWithPrivateKey, decryptFile, importKey, privateKeyStorageKey } from '../../utils/encryption';
 import { Button } from '../ui/Button';
 import { Spinner } from '../ui/Spinner';
 import { useToast } from '../../context/ToastContext';
+import { useWallet } from '../../hooks/useWallet';
+import { useMedChainApi } from '../../hooks/useMedChainApi';
 
-export const FileViewer = ({ record, isOpen, onClose }) => {
+export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', patientWallet = '' }) => {
     const [contentUrl, setContentUrl] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [manualKey, setManualKey] = useState('');
     const { fetchFromIPFS } = useIPFS();
+    const { account } = useWallet();
+    const medApi = useMedChainApi();
     const { showToast } = useToast();
 
-    const fetchAndDecrypt = useCallback(async (providedKey = null) => {
+    const fetchAndDecrypt = useCallback(async () => {
         if (!isOpen || !record) return;
 
         setIsLoading(true);
@@ -25,32 +28,23 @@ export const FileViewer = ({ record, isOpen, onClose }) => {
             // 1. Fetch Encrypted Data from IPFS
             const encryptedFileBuffer = await fetchFromIPFS(record.cid);
 
-            // 2. Retrieve Decryption Key
-            const keys = JSON.parse(localStorage.getItem('medchain_keys') || '{}');
-            let base64Key = providedKey || keys[record.cid];
+            // 2. Retrieve encrypted AES key from MongoDB and decrypt it locally with the viewer private key
+            const privateKey = localStorage.getItem(privateKeyStorageKey(account));
+            if (!privateKey) throw new Error('Private key not found in this browser. Register again from this browser or restore your key.');
 
-            if (!base64Key) {
-                try {
-                    const res = await fetch('/api/keys');
-                    const serverKeys = await res.json();
-                    base64Key = serverKeys[record.cid];
-                    if (base64Key) {
-                        keys[record.cid] = base64Key;
-                        localStorage.setItem('medchain_keys', JSON.stringify(keys));
-                    }
-                } catch (e) { console.error('Error fetching key from server', e); }
-            }
+            const keyRows = await medApi.getKeysByCid(record.cid);
+            const normalizedAccount = account?.toLowerCase();
+            const keyRow = keyRows.find((item) => (
+                viewerRole === 'patient'
+                    ? item.patientWallet === normalizedAccount
+                    : item.doctorWallet === normalizedAccount
+            ));
+            if (!keyRow) throw new Error('No encrypted AES key found for this wallet.');
 
-            if (!base64Key) {
-                throw new Error('Decryption key not found. Ensure the patient has shared the key (Simulated in this demo).');
-            }
-
-            // If a manual key was provided and worked, save it
-            if (providedKey) {
-                keys[record.cid] = providedKey;
-                localStorage.setItem('medchain_keys', JSON.stringify(keys));
-            }
-
+            const encryptedAESKey = viewerRole === 'patient'
+                ? keyRow.encryptedAESKeyForPatient
+                : keyRow.encryptedAESKeyForDoctor;
+            const base64Key = await decryptAESKeyWithPrivateKey(encryptedAESKey, privateKey);
             const key = await importKey(base64Key);
 
             // 3. Extract IV and Data
@@ -64,6 +58,14 @@ export const FileViewer = ({ record, isOpen, onClose }) => {
             const blob = new Blob([decryptedBuffer], { type: record.fileType });
             const url = URL.createObjectURL(blob);
             setContentUrl(url);
+            if (viewerRole === 'doctor') {
+                await medApi.createActivity({
+                    walletAddress: account,
+                    role: 'doctor',
+                    activityType: 'Doctor viewed records',
+                    relatedUser: patientWallet,
+                });
+            }
 
         } catch (err) {
             console.error(err);
@@ -72,7 +74,7 @@ export const FileViewer = ({ record, isOpen, onClose }) => {
         } finally {
             setIsLoading(false);
         }
-    }, [isOpen, record, fetchFromIPFS, showToast]);
+    }, [isOpen, record, fetchFromIPFS, showToast, account, viewerRole, patientWallet]);
 
     useEffect(() => {
         fetchAndDecrypt();
@@ -120,26 +122,7 @@ export const FileViewer = ({ record, isOpen, onClose }) => {
                                     <p className="font-medium text-red-500">Error Viewing File</p>
                                     <p className="text-sm mt-1 text-red-400">{error}</p>
 
-                                    {error.includes('key not found') && (
-                                        <div className="mt-6 p-4 bg-white border rounded shadow-sm">
-                                            <p className="text-gray-700 text-sm mb-3">Enter the AES decryption key (Base64) provided by the patient:</p>
-                                            <div className="flex gap-2">
-                                                <input
-                                                    type="password"
-                                                    placeholder="Enter Base64 Key"
-                                                    value={manualKey}
-                                                    onChange={(e) => setManualKey(e.target.value)}
-                                                    className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-gray-900 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
-                                                />
-                                                <Button
-                                                    onClick={() => fetchAndDecrypt(manualKey)}
-                                                    disabled={!manualKey.trim()}
-                                                >
-                                                    Decrypt
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    )}
+                                    <Button className="mt-5" onClick={fetchAndDecrypt}>Try again</Button>
                                 </div>
                             ) : contentUrl ? (
                                 record.fileType.startsWith('image/') ? (

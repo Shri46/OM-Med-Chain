@@ -1,8 +1,4 @@
 import axios from 'axios';
-import { Buffer } from 'buffer';
-
-const pinataApiKey = import.meta.env.VITE_PINATA_API_KEY;
-const pinataApiSecret = import.meta.env.VITE_PINATA_API_SECRET;
 const pinataJwt = import.meta.env.VITE_PINATA_JWT;
 const gatewayUrl = import.meta.env.VITE_IPFS_GATEWAY || 'https://gateway.pinata.cloud/ipfs/';
 
@@ -17,7 +13,6 @@ export const useIPFS = () => {
 
             const res = await axios.post("https://api.pinata.cloud/pinning/pinFileToIPFS", formData, {
                 headers: {
-                    'Content-Type': `multipart/form-data; boundary=${formData._boundary}`,
                     'Authorization': `Bearer ${pinataJwt}`
                 }
             });

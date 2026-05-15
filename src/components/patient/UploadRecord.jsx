@@ -1,20 +1,32 @@
-import React, { useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, X, File, Lock } from 'lucide-react';
+import { Upload, X, File, Lock, Stethoscope } from 'lucide-react';
 import { useIPFS } from '../../hooks/useIPFS';
 import { useContract } from '../../hooks/useContract';
-import { generateEncryptionKey, exportKey, encryptFile } from '../../utils/encryption';
+import { encryptAESKeyForPublicKey, encryptFile, exportKey, generateEncryptionKey } from '../../utils/encryption';
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/Card';
 import { useToast } from '../../context/ToastContext';
-import { Spinner } from '../ui/Spinner';
+import { useMedChainApi } from '../../hooks/useMedChainApi';
+import { useWallet } from '../../hooks/useWallet';
 
-export const UploadRecord = ({ onUploadSuccess }) => {
+export const UploadRecord = ({ patientProfile, onUploadSuccess }) => {
     const [file, setFile] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [doctors, setDoctors] = useState([]);
+    const [doctorWallet, setDoctorWallet] = useState('');
     const { uploadToIPFS } = useIPFS();
     const { storeCID } = useContract();
+    const medApi = useMedChainApi();
+    const { account } = useWallet();
     const { showToast } = useToast();
+
+    useEffect(() => {
+        if (patientProfile?.hospitalId?._id || patientProfile?.hospitalId) {
+            const hospitalId = patientProfile.hospitalId?._id || patientProfile.hospitalId;
+            medApi.getDoctors(hospitalId).then(setDoctors).catch(() => setDoctors([]));
+        }
+    }, [patientProfile?.hospitalId]);
 
     const onDrop = useCallback((acceptedFiles) => {
         setFile(acceptedFiles[0]);
@@ -26,10 +38,14 @@ export const UploadRecord = ({ onUploadSuccess }) => {
     });
 
     const handleUpload = async () => {
-        if (!file) return;
+        if (!file || !doctorWallet) return;
 
         setIsUploading(true);
         try {
+            const doctor = doctors.find((item) => item.walletAddress === doctorWallet);
+            if (!doctor) throw new Error('Select a doctor before uploading');
+            if (!patientProfile?.publicKey) throw new Error('Patient public key is missing');
+
             // 1. Read file
             const arrayBuffer = await file.arrayBuffer();
 
@@ -51,26 +67,32 @@ export const UploadRecord = ({ onUploadSuccess }) => {
             showToast('Uploading to IPFS...', 'loading');
             const cid = await uploadToIPFS(combinedData);
 
-            // 5. Store Key (DEMO ONLY: LocalStorage)
-            // In production, this should be encrypted with the user's wallet public key or stored in a secure vault
+            // 5. Encrypt AES key for both patient and selected doctor
             const exportedKey = await exportKey(key);
-            const keys = JSON.parse(localStorage.getItem('medchain_keys') || '{}');
-            keys[cid] = exportedKey;
-            localStorage.setItem('medchain_keys', JSON.stringify(keys));
-
-            // Sync with Mock Key Server to allow Doctor access across browser instances in testing
-            try {
-                await fetch('/api/keys', { method: 'POST', body: JSON.stringify({ [cid]: exportedKey }) });
-            } catch (e) {
-                console.error('Mock server sync failed', e);
-            }
+            const encryptedAESKeyForPatient = await encryptAESKeyForPublicKey(exportedKey, patientProfile.publicKey);
+            const encryptedAESKeyForDoctor = await encryptAESKeyForPublicKey(exportedKey, doctor.publicKey);
 
             // 6. Smart Contract Transaction
             showToast('Confirm transaction in MetaMask...', 'loading');
             const success = await storeCID(cid, file.name, file.type);
 
             if (success) {
+                await medApi.storeEncryptedKey({
+                    patientWallet: account,
+                    doctorWallet,
+                    cid,
+                    encryptedAESKeyForPatient,
+                    encryptedAESKeyForDoctor,
+                });
+                await medApi.createActivity({
+                    walletAddress: account,
+                    role: 'patient',
+                    activityType: 'File uploaded',
+                    relatedUser: doctorWallet,
+                    relatedName: doctor.name,
+                });
                 setFile(null);
+                setDoctorWallet('');
                 if (onUploadSuccess) onUploadSuccess();
             }
 
@@ -83,11 +105,25 @@ export const UploadRecord = ({ onUploadSuccess }) => {
     };
 
     return (
-        <Card className="mb-6">
+        <Card className="mb-6 border border-sky-100 shadow-sm">
             <CardHeader>
                 <CardTitle>Upload Medical Record</CardTitle>
             </CardHeader>
             <CardContent>
+                <label className="mb-4 block text-sm font-medium text-slate-700">
+                    Assign doctor for encrypted key sharing
+                    <div className="mt-1 flex items-center gap-2">
+                        <Stethoscope className="h-5 w-5 text-sky-600" />
+                        <select value={doctorWallet} onChange={(event) => setDoctorWallet(event.target.value)} className="input-field mt-0">
+                            <option value="">Select doctor</option>
+                            {doctors.map((doctor) => (
+                                <option key={doctor.walletAddress} value={doctor.walletAddress}>
+                                    {doctor.name} - {doctor.specialization}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </label>
                 {!file ? (
                     <div
                         {...getRootProps()}
@@ -121,9 +157,10 @@ export const UploadRecord = ({ onUploadSuccess }) => {
                         <Button
                             onClick={handleUpload}
                             isLoading={isUploading}
+                            disabled={!doctorWallet}
                             className="w-full"
                         >
-                            {isUploading ? 'Encrypting & Uploading...' : 'Encrypt & Upload Reocrd'}
+                            {isUploading ? 'Encrypting & Uploading...' : 'Encrypt & Upload Record'}
                         </Button>
                     </div>
                 )}

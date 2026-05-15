@@ -1,85 +1,88 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useWallet } from '../../hooks/useWallet';
-import { getUserName, saveUserName } from '../../utils/nameStorage';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { User } from 'lucide-react';
+import { useMedChainApi } from '../../hooks/useMedChainApi';
 
-export const ProfileSettings = () => {
-    const { account } = useWallet();
-    const [fullName, setFullName] = useState('');
-    const [isSaved, setIsSaved] = useState(false);
+export const ProfileSettings = ({ role, profile, onProfileChange }) => {
+  const { account } = useWallet();
+  const medApi = useMedChainApi();
+  const [form, setForm] = useState(profile || {});
+  const [isSaving, setIsSaving] = useState(false);
 
-    useEffect(() => {
-        if (account) {
-            const currentName = getUserName(account);
-            if (currentName) {
-                setFullName(currentName);
-            }
-        }
-    }, [account]);
+  useEffect(() => {
+    setForm(profile || {});
+  }, [profile]);
 
-    const handleSave = (e) => {
-        e.preventDefault();
-        if (account && fullName.trim()) {
-            saveUserName(account, fullName.trim());
-            setIsSaved(true);
+  const setField = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
-            // Reload window to instantly reflect real name across all components
-            // Alternatively, could use a context, but reload is easiest for this scope
-            setTimeout(() => {
-                window.location.reload();
-            }, 800);
-        }
-    };
+  const handleSave = async (event) => {
+    event.preventDefault();
+    if (role !== 'patient') return;
 
-    return (
-        <Card className="max-w-2xl">
-            <CardHeader className="flex flex-row items-center space-x-2">
-                <div className="bg-primary-50 p-2 rounded-lg">
-                    <User className="h-6 w-6 text-primary-600" />
-                </div>
-                <div>
-                    <CardTitle>Profile Settings</CardTitle>
-                    <p className="text-sm text-gray-500 mt-1">Manage your displayed name and account details.</p>
-                </div>
-            </CardHeader>
-            <CardContent>
-                <form onSubmit={handleSave} className="space-y-4">
-                    <div>
-                        <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
-                            Full Name
-                        </label>
-                        <div className="mt-1">
-                            <input
-                                type="text"
-                                id="fullName"
-                                value={fullName}
-                                onChange={(e) => {
-                                    setFullName(e.target.value);
-                                    setIsSaved(false);
-                                }}
-                                className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md py-2 px-3 border"
-                                placeholder="e.g. John Doe or Dr. Sarah Smith"
-                            />
-                        </div>
-                        <p className="mt-2 text-sm text-gray-500">
-                            This name will be visible to others when you interact with their records or grant access.
-                        </p>
-                    </div>
+    setIsSaving(true);
+    try {
+      const updated = await medApi.updatePatient(account, form);
+      onProfileChange?.(updated);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-                    <div className="flex items-center space-x-4">
-                        <Button type="submit" disabled={!fullName.trim()}>
-                            {isSaved ? "Saved!" : "Save Changes"}
-                        </Button>
-                        {isSaved && (
-                            <span className="text-sm text-green-600 font-medium">
-                                Refreshing to apply changes...
-                            </span>
-                        )}
-                    </div>
-                </form>
-            </CardContent>
-        </Card>
-    );
+  return (
+    <Card className="max-w-3xl border border-sky-100">
+      <CardHeader className="flex flex-row items-center space-x-2">
+        <div className="rounded-lg bg-sky-50 p-2">
+          <User className="h-6 w-6 text-sky-600" />
+        </div>
+        <div>
+          <CardTitle>Profile Settings</CardTitle>
+          <p className="mt-1 text-sm text-slate-500">Wallet identity: {account}</p>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {role === 'doctor' ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Info label="Name" value={profile?.name} />
+            <Info label="Specialization" value={profile?.specialization} />
+            <Info label="Hospital" value={profile?.hospitalId?.name} />
+            <Info label="Phone" value={profile?.phoneNumber} />
+            <Info label="Email" value={profile?.email} />
+          </div>
+        ) : (
+          <form onSubmit={handleSave} className="grid gap-4 md:grid-cols-2">
+            {['name', 'phoneNumber', 'email', 'guardianName', 'guardianPhone', 'guardianEmail', 'allergies', 'chronicConditions', 'emergencyNotes'].map((field) => (
+              <label key={field} className="block text-sm font-medium text-slate-700">
+                {labels[field]}
+                <input value={form[field] || ''} onChange={(event) => setField(field, event.target.value)} className="input-field" />
+              </label>
+            ))}
+            <div className="md:col-span-2">
+              <Button type="submit" isLoading={isSaving}>Save profile</Button>
+            </div>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
 };
+
+const labels = {
+  name: 'Name',
+  phoneNumber: 'Phone number',
+  email: 'Email',
+  guardianName: 'Guardian name',
+  guardianPhone: 'Guardian phone',
+  guardianEmail: 'Guardian email',
+  allergies: 'Allergies',
+  chronicConditions: 'Chronic conditions',
+  emergencyNotes: 'Emergency notes',
+};
+
+const Info = ({ label, value }) => (
+  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="mt-1 text-sm font-medium text-slate-900">{value || 'Not set'}</div>
+  </div>
+);

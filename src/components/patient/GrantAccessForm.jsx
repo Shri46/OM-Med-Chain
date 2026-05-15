@@ -1,38 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useContract } from '../../hooks/useContract';
 import { Button } from '../ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { UserPlus } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
-import { CONTRACT_ADDRESS } from '../../constants/contractAddress';
-import { CONTRACT_ABI } from '../../constants/contractABI';
 import { useWallet } from '../../hooks/useWallet';
-import { ethers } from 'ethers';
-import { getUserName } from '../../utils/nameStorage';
-import { formatAddress } from '../../utils/formatters';
+import { useMedChainApi } from '../../hooks/useMedChainApi';
 
-export const GrantAccessForm = ({ onSuccess }) => {
+export const GrantAccessForm = ({ patientProfile, onSuccess }) => {
     const [doctorAddress, setDoctorAddress] = useState('');
     const [availableDoctors, setAvailableDoctors] = useState([]);
     const [isFetchingDoctors, setIsFetchingDoctors] = useState(true);
 
-    const { provider } = useWallet();
+    const { account } = useWallet();
     const { grantAccess, isLoading } = useContract();
+    const medApi = useMedChainApi();
     const { showToast } = useToast();
 
     useEffect(() => {
         const fetchDoctors = async () => {
-            if (!provider) return;
+            const hospitalId = patientProfile?.hospitalId?._id || patientProfile?.hospitalId;
+            if (!hospitalId) return;
             setIsFetchingDoctors(true);
             try {
-                const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-                // Query all RoleRegistered events to find doctors
-                const filter = contract.filters.RoleRegistered(null, 'doctor');
-                const events = await contract.queryFilter(filter);
-
-                // Get unique doctor addresses (in case someone registered multiple times)
-                const uniqueDoctors = [...new Set(events.map(e => e.args.user))];
-                setAvailableDoctors(uniqueDoctors);
+                const doctors = await medApi.getDoctors(hospitalId);
+                setAvailableDoctors(doctors);
             } catch (error) {
                 console.error("Error fetching available doctors:", error);
             } finally {
@@ -41,7 +33,7 @@ export const GrantAccessForm = ({ onSuccess }) => {
         };
 
         fetchDoctors();
-    }, [provider]);
+    }, [patientProfile?.hospitalId]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -53,6 +45,14 @@ export const GrantAccessForm = ({ onSuccess }) => {
 
         const success = await grantAccess(doctorAddress);
         if (success) {
+            const doctor = availableDoctors.find((item) => item.walletAddress === doctorAddress);
+            await medApi.createActivity({
+                walletAddress: account,
+                role: 'patient',
+                activityType: 'Access granted',
+                relatedUser: doctorAddress,
+                relatedName: doctor?.name || '',
+            });
             setDoctorAddress('');
             if (onSuccess) onSuccess();
         }
@@ -78,11 +78,10 @@ export const GrantAccessForm = ({ onSuccess }) => {
                                 disabled={isLoading || isFetchingDoctors}
                             >
                                 <option value="">-- Choose a doctor --</option>
-                                {availableDoctors.map((docAddr) => {
-                                    const name = getUserName(docAddr);
+                                {availableDoctors.map((doctor) => {
                                     return (
-                                        <option key={docAddr} value={docAddr}>
-                                            {name ? `${name} (${formatAddress(docAddr)})` : formatAddress(docAddr)}
+                                        <option key={doctor.walletAddress} value={doctor.walletAddress}>
+                                            {doctor.name} - {doctor.specialization}
                                         </option>
                                     );
                                 })}
@@ -92,7 +91,7 @@ export const GrantAccessForm = ({ onSuccess }) => {
                             <p className="mt-2 text-xs text-primary-600">Loading available doctors...</p>
                         )}
                         {!isFetchingDoctors && availableDoctors.length === 0 && (
-                            <p className="mt-2 text-xs text-red-500">No registered doctors found on the network.</p>
+                            <p className="mt-2 text-xs text-red-500">No doctors found for this hospital.</p>
                         )}
                         <p className="mt-2 text-xs text-gray-500">
                             The selected doctor will be granted access to decrypt and view all your stored records.

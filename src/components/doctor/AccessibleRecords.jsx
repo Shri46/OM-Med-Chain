@@ -57,6 +57,8 @@ export const AccessibleRecords = ({ patientAddress }) => {
                 record={selectedRecord}
                 isOpen={!!selectedRecord}
                 onClose={() => setSelectedRecord(null)}
+                viewerRole="doctor"
+                patientWallet={patientAddress}
             />
         </>
     );
