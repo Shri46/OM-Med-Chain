@@ -1,13 +1,14 @@
-require('dotenv').config({ path: 'c:/Users/Admin/Documents/GO6/medchain/backend/.env' });
-const mongoose = require('mongoose');
-const Patient = require('c:/Users/Admin/Documents/GO6/medchain/backend/models/Patient');
+import dotenv from 'dotenv';
+import mongoose from 'mongoose';
+import { Patient } from './src/models/Patient.js';
+import dns from 'dns';
 
-const dns = require('dns');
+dotenv.config();
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 async function check() {
   try {
-    await mongoose.connect(process.env.MONGODB_URI, {
+    await mongoose.connect(process.env.MONGO_URI, {
       serverSelectionTimeoutMS: 5000,
       family: 4
     });
