@@ -1,16 +1,19 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { X, Download, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { X, Download, ShieldCheck, AlertTriangle, KeyRound } from 'lucide-react';
 import { useIPFS } from '../../hooks/useIPFS';
-import { decryptAESKeyWithPrivateKey, decryptFile, importKey, privateKeyStorageKey } from '../../utils/encryption';
+import { decryptAESKeyWithPrivateKey, decryptFile, getStoredPrivateKey, importKey, restorePrivateKeyForWallet } from '../../utils/encryption';
 import { Button } from '../ui/Button';
 import { Spinner } from '../ui/Spinner';
 import { useToast } from '../../context/ToastContext';
 import { useWallet } from '../../hooks/useWallet';
 import { useMedChainApi } from '../../hooks/useMedChainApi';
 
-export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', patientWallet = '' }) => {
+const missingPrivateKeyMessage = 'Private key not found in this browser. Register again from this browser or restore your key.';
+
+export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', patientWallet = '', viewerPublicKey = '' }) => {
     const [contentUrl, setContentUrl] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isRestoringKey, setIsRestoringKey] = useState(false);
     const [error, setError] = useState(null);
     const { fetchFromIPFS } = useIPFS();
     const { account } = useWallet();
@@ -29,8 +32,8 @@ export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', pat
             const encryptedFileBuffer = await fetchFromIPFS(record.cid);
 
             // 2. Retrieve encrypted AES key from MongoDB and decrypt it locally with the viewer private key
-            const privateKey = localStorage.getItem(privateKeyStorageKey(account));
-            if (!privateKey) throw new Error('Private key not found in this browser. Register again from this browser or restore your key.');
+            const privateKey = getStoredPrivateKey(account);
+            if (!privateKey) throw new Error(missingPrivateKeyMessage);
 
             const keyRows = await medApi.getKeysByCid(record.cid);
             const normalizedAccount = account?.toLowerCase();
@@ -75,6 +78,25 @@ export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', pat
             setIsLoading(false);
         }
     }, [isOpen, record, fetchFromIPFS, showToast, account, viewerRole, patientWallet]);
+
+    const handleRestoreKey = async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        setIsRestoringKey(true);
+        try {
+            const privateKey = (await file.text()).trim();
+            await restorePrivateKeyForWallet(account, privateKey, viewerPublicKey);
+            showToast('Private key restored in this browser', 'success');
+            await fetchAndDecrypt();
+        } catch {
+            setError('Unable to restore private key. Make sure this is the original key for the connected wallet.');
+            showToast('Key restore failed', 'error');
+        } finally {
+            setIsRestoringKey(false);
+        }
+    };
 
     useEffect(() => {
         fetchAndDecrypt();
@@ -122,7 +144,16 @@ export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', pat
                                     <p className="font-medium text-red-500">Error Viewing File</p>
                                     <p className="text-sm mt-1 text-red-400">{error}</p>
 
-                                    <Button className="mt-5" onClick={fetchAndDecrypt}>Try again</Button>
+                                    <div className="mt-5 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                                        <Button onClick={fetchAndDecrypt}>Try again</Button>
+                                        {error === missingPrivateKeyMessage && viewerPublicKey && (
+                                            <label className="inline-flex cursor-pointer items-center justify-center rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 transition-colors hover:bg-gray-50">
+                                                <KeyRound className="mr-2 h-4 w-4" />
+                                                {isRestoringKey ? 'Restoring...' : 'Restore key'}
+                                                <input type="file" accept=".txt,.key,.pem" className="sr-only" onChange={handleRestoreKey} disabled={isRestoringKey} />
+                                            </label>
+                                        )}
+                                    </div>
                                 </div>
                             ) : contentUrl ? (
                                 record.fileType.startsWith('image/') ? (

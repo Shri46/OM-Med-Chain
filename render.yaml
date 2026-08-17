@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: om-med-chain-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: MONGO_URI
+        sync: false        # you will paste this manually in Render dashboard
+      - key: CLIENT_ORIGIN
+        value: https://om-med-chain.vercel.app

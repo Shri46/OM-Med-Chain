@@ -9,7 +9,7 @@ export const useIPFS = () => {
             const formData = new FormData();
             // Create a Blob from the Uint8Array/Buffer to append to FormData
             const blob = new Blob([fileData]);
-            formData.append('file', blob, 'record.enc');
+            formData.append('file', blob, 'record.bin');
 
             const res = await axios.post("https://api.pinata.cloud/pinning/pinFileToIPFS", formData, {
                 headers: {

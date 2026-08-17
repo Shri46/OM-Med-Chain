@@ -66,7 +66,7 @@ export const PatientDashboard = ({ profile, onProfileChange }) => {
                         {activeTab === 'records' && (
                             <div className="space-y-6">
                                 <h2 className="text-2xl font-bold text-gray-900">My Medical Records</h2>
-                                <RecordList refreshTrigger={refreshTrigger} />
+                                <RecordList refreshTrigger={refreshTrigger} patientProfile={profile} />
                             </div>
                         )}
 
