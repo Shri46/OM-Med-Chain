@@ -27,8 +27,8 @@ export const DoctorDashboard = ({ profile }) => {
       setLoadingPatients(true);
       try {
         const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-        const granted = await contract.queryFilter('AccessGranted');
-        const revoked = await contract.queryFilter('AccessRevoked');
+        const granted = await contract.queryFilter('AccessGranted', -10000);
+        const revoked = await contract.queryFilter('AccessRevoked', -10000);
         const accessEvents = [...granted, ...revoked]
           .filter((event) => event.args[1].toLowerCase() === account.toLowerCase())
           .sort((a, b) => a.blockNumber - b.blockNumber || (a.index || 0) - (b.index || 0));

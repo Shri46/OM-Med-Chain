@@ -7,6 +7,6 @@ export const connectDB = async () => {
   }
 
   mongoose.set('strictQuery', true);
-  await mongoose.connect(mongoUri);
+  await mongoose.connect(mongoUri, { family: 4 });
   console.log('MongoDB connected');
 };
