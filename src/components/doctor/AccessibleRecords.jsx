@@ -5,7 +5,7 @@ import { FileViewer } from './FileViewer';
 import { Spinner } from '../ui/Spinner';
 import { Lock } from 'lucide-react';
 
-export const AccessibleRecords = ({ patientAddress }) => {
+export const AccessibleRecords = ({ patientAddress, doctorProfile }) => {
     const { getPatientRecords } = useContract();
     const [records, setRecords] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -59,6 +59,7 @@ export const AccessibleRecords = ({ patientAddress }) => {
                 onClose={() => setSelectedRecord(null)}
                 viewerRole="doctor"
                 patientWallet={patientAddress}
+                viewerPublicKey={doctorProfile?.publicKey}
             />
         </>
     );

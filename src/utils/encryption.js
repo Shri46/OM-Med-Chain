@@ -106,7 +106,43 @@ export async function decryptAESKeyWithPrivateKey(encryptedBase64Key, privateBas
     return textDecoder.decode(decrypted);
 }
 
-export const privateKeyStorageKey = (walletAddress) => `medchain_private_key_${walletAddress?.toLowerCase()}`;
+const normalizeWalletAddress = (walletAddress = '') => walletAddress.trim().toLowerCase();
+
+export const privateKeyStorageKey = (walletAddress) => `medchain_private_key_${normalizeWalletAddress(walletAddress)}`;
+
+export function getStoredPrivateKey(walletAddress) {
+    if (!walletAddress) return null;
+    return localStorage.getItem(privateKeyStorageKey(walletAddress));
+}
+
+export function storePrivateKeyForWallet(walletAddress, privateKey) {
+    if (!walletAddress || !privateKey) throw new Error('Wallet address and private key are required.');
+    localStorage.setItem(privateKeyStorageKey(walletAddress), privateKey.trim());
+}
+
+export async function validatePrivateKeyForPublicKey(privateBase64Key, publicBase64Key) {
+    const publicKey = await importPublicKey(publicBase64Key);
+    const privateKey = await importPrivateKey(privateBase64Key.trim());
+    const challenge = window.crypto.getRandomValues(new Uint8Array(32));
+    const encrypted = await window.crypto.subtle.encrypt(
+        { name: "RSA-OAEP" },
+        publicKey,
+        challenge
+    );
+    const decrypted = new Uint8Array(await window.crypto.subtle.decrypt(
+        { name: "RSA-OAEP" },
+        privateKey,
+        encrypted
+    ));
+    return challenge.every((byte, index) => byte === decrypted[index]);
+}
+
+export async function restorePrivateKeyForWallet(walletAddress, privateBase64Key, publicBase64Key) {
+    if (!publicBase64Key) throw new Error('Public key is missing for this profile.');
+    const isValid = await validatePrivateKeyForPublicKey(privateBase64Key, publicBase64Key);
+    if (!isValid) throw new Error('This private key does not match the connected wallet profile.');
+    storePrivateKeyForWallet(walletAddress, privateBase64Key);
+}
 
 // Encrypt file ArrayBuffer → returns { encryptedData: Uint8Array, iv: Uint8Array }
 export async function encryptFile(fileArrayBuffer, cryptoKey) {

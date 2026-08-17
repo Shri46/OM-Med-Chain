@@ -13,6 +13,8 @@ import { useMedChainApi } from '../hooks/useMedChainApi';
 import { Card, CardContent } from '../components/ui/Card';
 import { Spinner } from '../components/ui/Spinner';
 
+const LOG_LOOKBACK_BLOCKS = 9999;
+
 export const DoctorDashboard = ({ profile }) => {
   const { account, provider } = useWallet();
   const medApi = useMedChainApi();
@@ -27,8 +29,8 @@ export const DoctorDashboard = ({ profile }) => {
       setLoadingPatients(true);
       try {
         const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-        const granted = await contract.queryFilter('AccessGranted', -10000);
-        const revoked = await contract.queryFilter('AccessRevoked', -10000);
+        const granted = await contract.queryFilter('AccessGranted', -LOG_LOOKBACK_BLOCKS);
+        const revoked = await contract.queryFilter('AccessRevoked', -LOG_LOOKBACK_BLOCKS);
         const accessEvents = [...granted, ...revoked]
           .filter((event) => event.args[1].toLowerCase() === account.toLowerCase())
           .sort((a, b) => a.blockNumber - b.blockNumber || (a.index || 0) - (b.index || 0));
@@ -96,7 +98,7 @@ export const DoctorDashboard = ({ profile }) => {
                 {selectedPatient && (
                   <div className="space-y-4">
                     <PatientProfile patient={selectedPatient} />
-                    <AccessibleRecords patientAddress={selectedPatient.walletAddress} />
+                    <AccessibleRecords patientAddress={selectedPatient.walletAddress} doctorProfile={profile} />
                   </div>
                 )}
               </div>

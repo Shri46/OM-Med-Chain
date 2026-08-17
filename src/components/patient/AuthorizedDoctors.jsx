@@ -8,6 +8,8 @@ import { CONTRACT_ABI } from '../../constants/contractABI';
 import { ethers } from 'ethers';
 import { useMedChainApi } from '../../hooks/useMedChainApi';
 
+const LOG_LOOKBACK_BLOCKS = 9999;
+
 export const AuthorizedDoctors = ({ refreshTrigger }) => {
     const { provider, account } = useWallet();
     const medApi = useMedChainApi();
@@ -25,11 +27,11 @@ export const AuthorizedDoctors = ({ refreshTrigger }) => {
                 // Query AccessGranted events
                 // Filter: patient = account
                 const grantedFilter = contract.filters.AccessGranted(account, null);
-                const grantedEvents = await contract.queryFilter(grantedFilter, -10000);
+                const grantedEvents = await contract.queryFilter(grantedFilter, -LOG_LOOKBACK_BLOCKS);
 
                 // Query AccessRevoked events
                 const revokedFilter = contract.filters.AccessRevoked(account, null);
-                const revokedEvents = await contract.queryFilter(revokedFilter, -10000);
+                const revokedEvents = await contract.queryFilter(revokedFilter, -LOG_LOOKBACK_BLOCKS);
 
                 // Process events to find currently authorized doctors
                 const statusMap = {}; // address -> bool

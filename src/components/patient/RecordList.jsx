@@ -6,7 +6,7 @@ import { FileText } from 'lucide-react';
 import { FileViewer } from '../doctor/FileViewer';
 import { useWallet } from '../../hooks/useWallet';
 
-export const RecordList = ({ refreshTrigger }) => {
+export const RecordList = ({ refreshTrigger, patientProfile }) => {
     const { getRecords } = useContract();
     const { account } = useWallet();
     const [records, setRecords] = useState([]);
@@ -55,6 +55,7 @@ export const RecordList = ({ refreshTrigger }) => {
                 onClose={() => setSelectedRecord(null)}
                 viewerRole="patient"
                 patientWallet={account}
+                viewerPublicKey={patientProfile?.publicKey}
             />
         </>
     );
