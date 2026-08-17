@@ -25,11 +25,11 @@ export const AuthorizedDoctors = ({ refreshTrigger }) => {
                 // Query AccessGranted events
                 // Filter: patient = account
                 const grantedFilter = contract.filters.AccessGranted(account, null);
-                const grantedEvents = await contract.queryFilter(grantedFilter);
+                const grantedEvents = await contract.queryFilter(grantedFilter, -10000);
 
                 // Query AccessRevoked events
                 const revokedFilter = contract.filters.AccessRevoked(account, null);
-                const revokedEvents = await contract.queryFilter(revokedFilter);
+                const revokedEvents = await contract.queryFilter(revokedFilter, -10000);
 
                 // Process events to find currently authorized doctors
                 const statusMap = {}; // address -> bool
