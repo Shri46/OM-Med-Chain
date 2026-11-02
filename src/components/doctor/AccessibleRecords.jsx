@@ -20,7 +20,8 @@ export const AccessibleRecords = ({ patientAddress, doctorProfile }) => {
             if (!patientAddress || !account) return;
 
             setIsLoading(true);
-            const data = await getPatientRecords(patientAddress);
+            // ethers returns a frozen Result, so copy it before filtering and reversing.
+            const data = [...await getPatientRecords(patientAddress)];
             // The patient wraps the AES key only for the doctor they assigned the record to,
             // so show only the records that carry a key for this doctor.
             const addressedToMe = await Promise.all(data.map((record) => medApi.getKeysByCid(record.cid)
