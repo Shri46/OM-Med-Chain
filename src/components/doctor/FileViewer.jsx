@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Download, ShieldCheck, AlertTriangle, KeyRound } from 'lucide-react';
 import { useIPFS } from '../../hooks/useIPFS';
 import { decryptAESKeyWithPrivateKey, decryptFile, getStoredPrivateKey, importKey, restorePrivateKeyForWallet } from '../../utils/encryption';
@@ -19,10 +19,30 @@ export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', pat
     const { account } = useWallet();
     const medApi = useMedChainApi();
     const { showToast } = useToast();
+    // Identifies the newest run so a superseded one cannot write state, and
+    // tracks the live blob URL so it can actually be revoked.
+    const runIdRef = useRef(0);
+    const objectUrlRef = useRef(null);
+
+    const releaseObjectUrl = useCallback(() => {
+        if (objectUrlRef.current) {
+            URL.revokeObjectURL(objectUrlRef.current);
+            objectUrlRef.current = null;
+        }
+    }, []);
 
     const fetchAndDecrypt = useCallback(async () => {
         if (!isOpen || !record) return;
+        // The wallet resolves asynchronously; wait rather than failing on a missing key.
+        if (!account) {
+            setIsLoading(true);
+            return;
+        }
 
+        const runId = ++runIdRef.current;
+        const isStale = () => runId !== runIdRef.current;
+
+        releaseObjectUrl();
         setIsLoading(true);
         setError(null);
         setContentUrl(null);
@@ -60,24 +80,32 @@ export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', pat
             // 5. Create Blob URL
             const blob = new Blob([decryptedBuffer], { type: record.fileType });
             const url = URL.createObjectURL(blob);
+            if (isStale()) {
+                URL.revokeObjectURL(url);
+                return;
+            }
+            objectUrlRef.current = url;
             setContentUrl(url);
             if (viewerRole === 'doctor') {
-                await medApi.createActivity({
+                // The audit log must not hold up a file that is already decrypted,
+                // nor report a decryption failure if only the log write fails.
+                medApi.createActivity({
                     walletAddress: account,
                     role: 'doctor',
                     activityType: 'Doctor viewed records',
                     relatedUser: patientWallet,
-                });
+                }).catch((logError) => console.error('Activity log failed:', logError));
             }
 
         } catch (err) {
+            if (isStale()) return;
             console.error(err);
             setError(err.message || "Failed to decrypt file");
             showToast('Decryption failed', 'error');
         } finally {
-            setIsLoading(false);
+            if (!isStale()) setIsLoading(false);
         }
-    }, [isOpen, record, fetchFromIPFS, showToast, account, viewerRole, patientWallet]);
+    }, [isOpen, record, fetchFromIPFS, showToast, account, viewerRole, patientWallet, releaseObjectUrl]);
 
     const handleRestoreKey = async (event) => {
         const file = event.target.files?.[0];
@@ -101,11 +129,12 @@ export const FileViewer = ({ record, isOpen, onClose, viewerRole = 'doctor', pat
     useEffect(() => {
         fetchAndDecrypt();
 
-        // Cleanup
+        // Cleanup: invalidate any in-flight run and free the decrypted file.
         return () => {
-            if (contentUrl) URL.revokeObjectURL(contentUrl);
+            runIdRef.current += 1;
+            releaseObjectUrl();
         };
-    }, [isOpen, record]); // Intentional exclusion of fetchAndDecrypt to avoid infinite loop on mount
+    }, [isOpen, record, account]); // Intentional exclusion of fetchAndDecrypt to avoid infinite loop on mount
 
     if (!isOpen) return null;
 
