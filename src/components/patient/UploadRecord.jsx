@@ -16,17 +16,23 @@ export const UploadRecord = ({ patientProfile, onUploadSuccess }) => {
     const [doctors, setDoctors] = useState([]);
     const [doctorWallet, setDoctorWallet] = useState('');
     const { uploadToIPFS } = useIPFS();
-    const { storeCID } = useContract();
+    const { storeCID, isAuthorized } = useContract();
     const medApi = useMedChainApi();
     const { account } = useWallet();
     const { showToast } = useToast();
 
     useEffect(() => {
-        if (patientProfile?.hospitalId?._id || patientProfile?.hospitalId) {
-            const hospitalId = patientProfile.hospitalId?._id || patientProfile.hospitalId;
-            medApi.getDoctors(hospitalId).then(setDoctors).catch(() => setDoctors([]));
-        }
-    }, [patientProfile?.hospitalId]);
+        // Only doctors this patient has already granted access to can receive a record.
+        const loadAuthorizedDoctors = async () => {
+            if (!account) return;
+            const hospitalId = patientProfile?.hospitalId?._id || patientProfile?.hospitalId;
+            if (!hospitalId) return;
+            const all = await medApi.getDoctors(hospitalId).catch(() => []);
+            const granted = await Promise.all(all.map((item) => isAuthorized(account, item.walletAddress)));
+            setDoctors(all.filter((_, index) => granted[index]));
+        };
+        loadAuthorizedDoctors();
+    }, [patientProfile?.hospitalId, account, isAuthorized]);
 
     const onDrop = useCallback((acceptedFiles) => {
         setFile(acceptedFiles[0]);
@@ -123,6 +129,9 @@ export const UploadRecord = ({ patientProfile, onUploadSuccess }) => {
                             ))}
                         </select>
                     </div>
+                    {doctors.length === 0 && (
+                        <p className="mt-2 text-xs text-red-500">No doctors have access yet. Grant access from the Access Control tab first.</p>
+                    )}
                 </label>
                 {!file ? (
                     <div

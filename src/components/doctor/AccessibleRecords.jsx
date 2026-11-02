@@ -4,25 +4,34 @@ import { RecordCard } from '../patient/RecordCard';
 import { FileViewer } from './FileViewer';
 import { Spinner } from '../ui/Spinner';
 import { Lock } from 'lucide-react';
+import { useWallet } from '../../hooks/useWallet';
+import { useMedChainApi } from '../../hooks/useMedChainApi';
 
 export const AccessibleRecords = ({ patientAddress, doctorProfile }) => {
     const { getPatientRecords } = useContract();
+    const { account } = useWallet();
+    const medApi = useMedChainApi();
     const [records, setRecords] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [selectedRecord, setSelectedRecord] = useState(null);
 
     useEffect(() => {
         const fetchRecords = async () => {
-            if (!patientAddress) return;
+            if (!patientAddress || !account) return;
 
             setIsLoading(true);
             const data = await getPatientRecords(patientAddress);
-            setRecords([...data].reverse());
+            // The patient wraps the AES key only for the doctor they assigned the record to,
+            // so show only the records that carry a key for this doctor.
+            const addressedToMe = await Promise.all(data.map((record) => medApi.getKeysByCid(record.cid)
+                .then((rows) => rows.some((row) => row.doctorWallet === account.toLowerCase()))
+                .catch(() => false)));
+            setRecords(data.filter((_, index) => addressedToMe[index]).reverse());
             setIsLoading(false);
         };
 
         fetchRecords();
-    }, [patientAddress, getPatientRecords]);
+    }, [patientAddress, getPatientRecords, account]);
 
     if (!patientAddress) return null;
 

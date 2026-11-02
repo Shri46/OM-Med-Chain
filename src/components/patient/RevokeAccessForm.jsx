@@ -10,15 +10,23 @@ import { useMedChainApi } from '../../hooks/useMedChainApi';
 export const RevokeAccessForm = ({ patientProfile, onSuccess }) => {
     const [doctorAddress, setDoctorAddress] = useState('');
     const [doctors, setDoctors] = useState([]);
-    const { revokeAccess, isLoading } = useContract();
+    const { revokeAccess, isAuthorized, isLoading } = useContract();
     const { account } = useWallet();
     const medApi = useMedChainApi();
     const { showToast } = useToast();
 
     useEffect(() => {
-        const hospitalId = patientProfile?.hospitalId?._id || patientProfile?.hospitalId;
-        if (hospitalId) medApi.getDoctors(hospitalId).then(setDoctors).catch(() => setDoctors([]));
-    }, [patientProfile?.hospitalId]);
+        // Only doctors who currently hold access can be revoked.
+        const loadAuthorizedDoctors = async () => {
+            if (!account) return;
+            const hospitalId = patientProfile?.hospitalId?._id || patientProfile?.hospitalId;
+            if (!hospitalId) return;
+            const all = await medApi.getDoctors(hospitalId).catch(() => []);
+            const granted = await Promise.all(all.map((item) => isAuthorized(account, item.walletAddress)));
+            setDoctors(all.filter((_, index) => granted[index]));
+        };
+        loadAuthorizedDoctors();
+    }, [patientProfile?.hospitalId, account, isAuthorized]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();

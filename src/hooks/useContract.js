@@ -55,6 +55,17 @@ export const useContract = () => {
         }
     }, [getContract, showToast]);
 
+    const isAuthorized = useCallback(async (patientAddress, doctorAddress) => {
+        try {
+            const contract = await getContract();
+            if (!contract) return false;
+            return await contract.isAuthorized(patientAddress, doctorAddress);
+        } catch (error) {
+            console.error("Error checking authorization:", error);
+            return false;
+        }
+    }, [getContract]);
+
     // Write functions
     const registerRole = async (role) => {
         setIsLoading(true);
@@ -132,6 +143,7 @@ export const useContract = () => {
         getRole,
         getRecords,
         getPatientRecords,
+        isAuthorized,
         registerRole,
         storeCID,
         grantAccess,
